@@ -1,6 +1,7 @@
 import os
-import ffmpeg
 import shutil
+import subprocess
+import json
 
 INPUT_PATH = "./input"
 OUTPUT_PATH = "./output"
@@ -8,12 +9,27 @@ ERROR_PATH = "./error"
 
 
 def _get_video_fps(video_path):
-    probe = ffmpeg.probe(video_path)
-    video_streams = [stream for stream in probe["streams"] if stream["codec_type"] == "video"]
-    if video_streams:
-        return float(video_streams[0]["r_frame_rate"].split("/")[0]) / float(video_streams[0]["r_frame_rate"].split("/")[1])
+    try:
+        command = [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=r_frame_rate",
+            "-of", "json",
+            video_path
+        ]
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
-    return None
+        output = json.loads(result.stdout)
+        frame_rate = output["streams"][0]["r_frame_rate"]
+
+        numerator, denominator = map(int, frame_rate.split("/"))
+        fps = numerator / denominator
+        return fps
+
+    except Exception as e:
+        print(f"Fehler beim Auslesen der FPS für Datei {video_path}: {e}")
+        return None
 
 def _move_directory(source_dir, target_dir):
     if not os.path.exists(source_dir):
@@ -49,46 +65,61 @@ def convert_video_file(input_file_path, output_file_path, aspect_ratio="4:3", au
     os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
 
     if speed != 1.0:
-        video_speed_filter = f"{1 / speed}*PTS" if speed != 1.0 else None
-        audio_speed_filter = f"{speed}" if speed != 1.0 else None
-
         file_name = os.path.basename(input_file_path)
         file_name = "RAW-H264-" + file_name
         raw_file_path = os.path.join(os.path.dirname(input_file_path), file_name).replace(".mp4", ".h264")
 
-        (
-            ffmpeg
-            .input(input_file_path)
-            .output(raw_file_path, map="0:v", c="copy", bsf="h264_mp4toannexb")
-            .run(overwrite_output=True)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i", input_file_path,
+                "-map", "0:v",
+                "-c:v", "copy",
+                "-bsf:v", "h264_mp4toannexb",
+                raw_file_path
+            ],
+            check=True
         )
 
-        (
-            ffmpeg
-            .input(raw_file_path, fflags="+genpts", r=original_fps * speed)
-            .output(
-                output_file_path,
-                c="copy",
-                aspect=aspect_ratio
-            )
-            .run(overwrite_output=True)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-fflags", "+genpts",
+                "-r", str(original_fps * speed),
+                "-i", raw_file_path,
+                "-i", input_file_path,
+                "-map", "0:v",
+                "-c:v", "copy",
+                "-map", "1:a",
+                "-af", f"atempo={speed}",
+                "-aspect", aspect_ratio,
+                "-acodec", audio_codec,
+                "-movflags", "faststart",
+                output_file_path
+            ],
+            check=True
         )
+
+        os.unlink(raw_file_path)
 
     else:
-        stream = ffmpeg.input(input_file_path)
-        stream = ffmpeg.output(
-            stream,
-            output_file_path,
-            aspect=aspect_ratio,
-            acodec=audio_codec
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i", input_file_path,
+                "-c:v", "copy",
+                "-aspect", aspect_ratio,
+                "-acodec", audio_codec,
+                output_file_path
+            ]
         )
 
-        ffmpeg.run(stream)
-
 if __name__ == "__main__":
-    i_path = "./input/order-11111111/Quelle/1578318-hd_1920_1080_30fps.mp4"
-    o_path = "./output/order-11111111/Quelle/1578318-hd_1920_1080_30fps.mp4"
-    convert_video_file(i_path, o_path, speed=0.5)
-
+    i_path = "./input/1578318-hd_1920_1080_30fps.mp4"
+    o_path = "./output/1578318-hd_1920_1080_30fps.mp4"
+    convert_video_file(i_path, o_path, speed=0.72)
 
     # TODO: speed 1.31 und 0.72
