@@ -16,7 +16,7 @@ def _move_directory(source_dir, target_dir):
             source_path = os.path.join(source_dir, item)
             target_path = os.path.join(target_dir, item)
 
-            if target_path.endswith(".MP4"):
+            if target_path.endswith(".MP4") or target_path.endswith(".MPEG4") or target_path.endswith(".mpeg4"):
                 target_path = os.path.splitext(target_path)[0] + ".mp4"
 
             shutil.move(source_path, target_path)
