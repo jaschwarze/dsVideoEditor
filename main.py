@@ -16,6 +16,9 @@ def _move_directory(source_dir, target_dir):
             source_path = os.path.join(source_dir, item)
             target_path = os.path.join(target_dir, item)
 
+            if target_path.endswith(".MP4"):
+                target_path = os.path.splitext(target_path)[0] + ".mp4"
+
             shutil.move(source_path, target_path)
             moved_items.append((target_path, source_path))
     except Exception as e:
